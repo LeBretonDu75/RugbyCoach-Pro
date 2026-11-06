@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RugbyCoach Pro - Tableau Tactique & Match</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            pitch: '#1b4d3e',
+            pitchLine: '#ffffff',
+            rugbyGold: '#ffb703',
+            cardYellow: '#eab308',
+            cardOrange: '#f97316',
+            cardRed: '#ef4444'
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- HTML2Canvas pour export d'image -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    .pitch-texture {
+      background: linear-gradient(to right, rgba(0,0,0,0.15) 0%, transparent 15%, transparent 85%, rgba(0,0,0,0.15) 100%),
+                  repeating-linear-gradient(90deg, #1e5645, #1e5645 10%, #1b4d3e 10%, #1b4d3e 20%);
+    }
+    .no-select {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    @media print {
+      body * { visibility: hidden; }
+      #printable-sheet, #printable-sheet * { visibility: visible; }
+      #printable-sheet { position: absolute; left: 0; top: 0; width: 100%; color: black !important; }
+    }
+  </style>
+</head>
+
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen flex flex-col no-select"
+      x-data="rugbyApp()" x-init="initApp()">
+
+  <!-- NAVBAR HEADER -->
+  <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex flex-wrap items-center justify-between gap-4 shadow-lg">
+    <div class="flex items-center space-x-3">
+      <div class="bg-emerald-600 p-2 rounded-lg text-white">
+        <i data-lucide="shield"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+          RugbyCoach <span class="bg-emerald-500 text-xs px-2 py-0.5 rounded text-slate-950 font-extrabold uppercase">PRO</span>
+        </h1>
+        <p class="text-xs text-slate-400">Tableau Tactique, Chrono & Cartons Exclusions (23 Joueurs)</p>
+      </div>
+    </div>
+
+    <!-- Actions globales & Exports -->
+    <div class="flex items-center gap-2">
+      <button @click="exportPitchImage()" class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs font-semibold rounded-md border border-slate-600 transition">
+        <i data-lucide="camera" class="w-4 h-4 text-emerald-400"></i>
+        <span>Image Terrain</span>
+      </button>
+      <button @click="showMatchSheet = true" class="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold rounded-md text-white transition shadow">
+        <i data-lucide="file-text" class="w-4 h-4"></i>
+        <span>Feuille de Match PDF</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MATCH SCOREBOARD & CHRONO -->
+  <section class="bg-slate-950 border-b border-slate-800 px-4 py-3 shadow-inner">
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
+      
+      <!-- Équipe Domicile -->
+      <div class="flex items-center gap-4 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 flex-1 w-full justify-between lg:justify-start">
+        <div class="flex items-center gap-3">
+          <input type="text" x-model="match.homeTeam" class="bg-transparent font-bold text-lg text-white border-b border-slate-700 focus:border-emerald-500 focus:outline-none w-36 sm:w-44">
+          <span class="text-3xl font-black text-emerald-400 font-mono" x-text="match.homeScore"></span>
+        </div>
+        <div class="flex items-center gap-1">
+          <button @click="addScore('home', 5, 'Essai')" class="px-2 py-1 bg-slate-800 hover:bg-emerald-600/30 text-emerald-400 text-xs font-bold rounded border border-emerald-500/30">+5</button>
+          <button @click="addScore('home', 2, 'Transformation')" class="px-2 py-1 bg-slate-800 hover:bg-emerald-600/30 text-emerald-400 text-xs font-bold rounded border border-emerald-500/30">+2</button>
+          <button @click="addScore('home', 3, 'Pénalité/Drop')" class="px-2 py-1 bg-slate-800 hover:bg-emerald-600/30 text-emerald-400 text-xs font-bold rounded border border-emerald-500/30">+3</button>
+        </div>
+      </div>
+
+      <!-- Chronomètre Central -->
+      <div class="flex items-center gap-4 bg-slate-900 px-6 py-2 rounded-2xl border border-slate-800 shadow-md">
+        <div class="text-center">
+          <div class="font-mono text-3xl font-black tracking-widest text-emerald-400" x-text="formatTime(match.timer)"></div>
+          <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400" x-text="match.half === 1 ? '1ère Mi-temps' : '2ème Mi-temps'"></div>
+        </div>
+        <div class="flex items-center gap-1.5 border-l border-slate-800 pl-4">
+          <button @click="toggleTimer()" :class="match.isRunning ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'" class="p-2.5 rounded-lg text-white font-bold transition shadow">
+            <i :data-lucide="match.isRunning ? 'pause' : 'play'" class="w-5 h-5"></i>
+          </button>
+          <button @click="resetTimer()" class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition" title="Réinitialiser le chrono">
+            <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+          </button>
+          <button @click="toggleHalf()" class="px-2 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 rounded-lg transition">
+            <span x-text="match.half === 1 ? '2H' : '1H'"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Équipe Extérieur -->
+      <div class="flex items-center gap-4 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 flex-1 w-full justify-between lg:justify-end">
+        <div class="flex items-center gap-1 order-2 lg:order-1">
+          <button @click="addScore('away', 5, 'Essai')" class="px-2 py-1 bg-slate-800 hover:bg-blue-600/30 text-blue-400 text-xs font-bold rounded border border-blue-500/30">+5</button>
+          <button @click="addScore('away', 2, 'Transformation')" class="px-2 py-1 bg-slate-800 hover:bg-blue-600/30 text-blue-400 text-xs font-bold rounded border border-blue-500/30">+2</button>
+          <button @click="addScore('away', 3, 'Pénalité/Drop')" class="px-2 py-1 bg-slate-800 hover:bg-blue-600/30 text-blue-400 text-xs font-bold rounded border border-blue-500/30">+3</button>
+        </div>
+        <div class="flex items-center gap-3 order-1 lg:order-2">
+          <span class="text-3xl font-black text-blue-400 font-mono" x-text="match.awayScore"></span>
+          <input type="text" x-model="match.awayTeam" class="bg-transparent font-bold text-lg text-white border-b border-slate-700 focus:border-blue-500 focus:outline-none w-36 sm:w-44 text-right">
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- BARRE DES CARTONS & DISCIPLINE -->
+  <section class="bg-slate-900 border-b border-slate-800 px-4 py-2.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Boutons d'attribution de cartons -->
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-bold uppercase text-slate-400 mr-2 flex items-center gap-1">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-500"></i> Discipline :
+        </span>
+        <button @click="openCardModal('yellow')" class="px-3 py-1 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/40 rounded-lg text-xs font-bold flex items-center gap-1.5 transition">
+          <span class="w-3 h-4 bg-yellow-500 rounded-sm inline-block"></span> Jaune (10m)
+        </button>
+        <button @click="openCardModal('orange')" class="px-3 py-1 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border border-orange-500/40 rounded-lg text-xs font-bold flex items-center gap-1.5 transition">
+          <span class="w-3 h-4 bg-orange-500 rounded-sm inline-block"></span> Orange (20m)
+        </button>
+        <button @click="openCardModal('red')" class="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/40 rounded-lg text-xs font-bold flex items-center gap-1.5 transition">
+          <span class="w-3 h-4 bg-red-500 rounded-sm inline-block"></span> Rouge (Expuls.)
+        </button>
+      </div>
+
+      <!-- Exclusions Temporaires En Cours -->
+      <div class="flex items-center gap-2 overflow-x-auto py-0.5">
+        <template x-for="(card, index) in activeCards" :key="index">
+          <div :class="{
+            'border-yellow-500/50 bg-yellow-500/10 text-yellow-400': card.type === 'yellow',
+            'border-orange-500/50 bg-orange-500/10 text-orange-400': card.type === 'orange',
+            'border-red-500/50 bg-red-500/10 text-red-400': card.type === 'red'
+          }" class="flex items-center gap-2 px-2.5 py-1 rounded-lg border text-xs font-medium shrink-0">
+            <span class="font-bold" x-text="card.team === 'home' ? match.homeTeam : match.awayTeam"></span>
+            <span class="font-bold" x-text="'#' + card.playerNum + ' ' + card.playerName"></span>
+            <template x-if="card.type !== 'red'">
+              <span class="font-mono bg-slate-950 px-1.5 py-0.5 rounded font-bold" x-text="formatTime(card.remainingTime)"></span>
+            </template>
+            <template x-if="card.type === 'red'">
+              <span class="text-[10px] uppercase font-bold bg-red-950 text-red-400 px-1.5 py-0.5 rounded">ROUGE</span>
+            </template>
+            <button @click="removeCard(index)" class="text-slate-400 hover:text-white ml-1">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </template>
+        <span x-show="activeCards.length === 0" class="text-xs text-slate-400 italic">Aucune sanction active</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- CONTENU PRINCIPAL -->
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 max-w-7xl mx-auto w-full">
+    
+    <!-- COLONNE GAUCHE : EFFECTIF (23 Joueurs) -->
+    <aside class="lg:col-span-3 bg-slate-800 border border-slate-700 rounded-xl flex flex-col overflow-hidden shadow-md">
+      
+      <!-- Onglets Effectif -->
+      <div class="flex border-b border-slate-700 bg-slate-900/50">
+        <button @click="rosterTab = 'starters'" :class="rosterTab === 'starters' ? 'bg-slate-800 text-emerald-400 border-b-2 border-emerald-400' : 'text-slate-400 hover:text-slate-200'" class="flex-1 py-2 text-xs font-bold uppercase transition">
+          Titulaires (1-15)
+        </button>
+        <button @click="rosterTab = 'subs'" :class="rosterTab === 'subs' ? 'bg-slate-800 text-emerald-400 border-b-2 border-emerald-400' : 'text-slate-400 hover:text-slate-200'" class="flex-1 py-2 text-xs font-bold uppercase transition">
+          Remplaçants (16-23)
+        </button>
+      </div>
+
+      <!-- Liste des Joueurs -->
+      <div class="flex-1 overflow-y-auto p-3 space-y-2 max-h-[600px] lg:max-h-[none]">
+        <template x-for="player in filteredPlayers" :key="player.id">
+          <div draggable="true"
+               @dragstart="onDragStart($event, player)"
+               class="flex items-center justify-between p-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 border border-slate-600/40 cursor-grab active:cursor-grabbing transition group">
+            
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <span class="w-6 h-6 rounded-full bg-slate-900 text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-700" x-text="player.number"></span>
+              
+              <div class="flex flex-col flex-1 min-w-0">
+                <input type="text" x-model="player.name" class="bg-transparent text-xs font-semibold text-slate-100 focus:outline-none focus:border-b focus:border-emerald-500 truncate">
+                <input type="text" x-model="player.role" class="bg-transparent text-[10px] text-slate-400 focus:outline-none truncate">
+              </div>
+            </div>
+
+            <!-- Status sur terrain ou banc -->
+            <button @click="togglePlayerOnPitch(player)"
+                    :class="player.onPitch ? 'text-emerald-400 bg-emerald-950/50 border-emerald-500/30' : 'text-slate-400 bg-slate-800 border-slate-600'"
+                    class="px-2 py-1 text-[10px] font-bold rounded border transition shrink-0 ml-2">
+              <span x-text="player.onPitch ? 'Sur terrain' : 'Banc'"></span>
+            </button>
+          </div>
+        </template>
+      </div>
+
+    </aside>
+
+    <!-- COLONNE CENTRALE : TERRAIN TACTIQUE INTERACTIF -->
+    <section class="lg:col-span-6 flex flex-col gap-3">
+      
+      <!-- Barre d'outils Dessin et Presets -->
+      <div class="bg-slate-800 border border-slate-700 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 shadow-sm">
+        
+        <!-- Outils Dessin -->
+        <div class="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
+          <button @click="setTool('line')" :class="drawTool === 'line' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'" class="p-1.5 rounded transition" title="Ligne pleine">
+            <i data-lucide="minus" class="w-4 h-4"></i>
+          </button>
+          <button @click="setTool('arrow')" :class="drawTool === 'arrow' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'" class="p-1.5 rounded transition" title="Flèche de course">
+            <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
+          </button>
+          <button @click="setTool('dashed')" :class="drawTool === 'dashed' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-slate-200'" class="p-1.5 rounded transition" title="Passe (pointillé)">
+            <i data-lucide="more-horizontal" class="w-4 h-4"></i>
+          </button>
+          <button @click="setTool('eraser')" :class="drawTool === 'eraser' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-slate-200'" class="p-1.5 rounded transition" title="Gomme">
+            <i data-lucide="eraser" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Couleurs -->
+        <div class="flex items-center gap-1.5 bg-slate-900 p-1 rounded-lg border border-slate-700">
+          <template x-for="c in ['#ef4444', '#3b82f6', '#eab308', '#ffffff']" :key="c">
+            <button @click="drawColor = c" :style="`background-color: ${c}`" :class="drawColor === c ? 'ring-2 ring-white scale-110' : 'opacity-70 hover:opacity-100'" class="w-5 h-5 rounded-full transition"></button>
+          </template>
+        </div>
+
+        <!-- Presets Tactiques -->
+        <div class="flex items-center gap-1">
+          <select @change="applyPreset($event.target.value); $event.target.value=''" class="bg-slate-900 text-xs text-slate-200 border border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none">
+            <option value="" disabled selected>Presets Tactiques...</option>
+            <option value="scrum">Mêlée 5m Attaque</option>
+            <option value="lineout">Touche Complète</option>
+            <option value="attackWave">Attaque en Vague</option>
+            <option value="blitzDef">Défense Blitz</option>
+          </select>
+          <button @click="clearCanvas()" class="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition" title="Effacer le dessin">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Le Terrain Rugby -->
+      <div id="pitch-container"
+           class="relative pitch-texture rounded-xl border-2 border-slate-700 aspect-[4/3] w-full overflow-hidden shadow-2xl"
+           @dragover.prevent
+           @drop="onDropOnPitch($event)">
+
+        <!-- Traçés du terrain (En-but, 22m, médiane) -->
+        <div class="absolute inset-0 border-4 border-white/80 pointer-events-none">
+          <!-- Ligne médiane -->
+          <div class="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/80"></div>
+          <!-- Lignes des 22m -->
+          <div class="absolute top-0 bottom-0 left-[22%] w-0.5 bg-white/70 border-r border-dashed border-white/50"></div>
+          <div class="absolute top-0 bottom-0 right-[22%] w-0.5 bg-white/70 border-l border-dashed border-white/50"></div>
+          <!-- Lignes d'en-but -->
+          <div class="absolute top-0 bottom-0 left-[8%] w-0.5 bg-white"></div>
+          <div class="absolute top-0 bottom-0 right-[8%] w-0.5 bg-white"></div>
+          <!-- Poteaux -->
+          <div class="absolute top-[40%] bottom-[40%] left-[8%] w-1 bg-yellow-400"></div>
+          <div class="absolute top-[40%] bottom-[40%] right-[8%] w-1 bg-yellow-400"></div>
+        </div>
+
+        <!-- Canvas pour le dessin tactique -->
+        <canvas id="tactical-canvas" class="absolute inset-0 z-10 cursor-crosshair"
+                @mousedown="startDrawing($event)"
+                @mousemove="draw($event)"
+                @mouseup="stopDrawing()"
+                @mouseleave="stopDrawing()"></canvas>
+
+        <!-- Joueurs placés sur le terrain -->
+        <template x-for="player in playersOnPitch" :key="player.id">
+          <div :style="`left: ${player.x}%; top: ${player.y}%;`"
+               draggable="true"
+               @dragstart="onDragStart($event, player)"
+               class="absolute -translate-x-1/2 -translate-y-1/2 z-20 cursor-grab active:cursor-grabbing group">
+            
+            <div class="w-8 h-8 rounded-full bg-emerald-600 border-2 border-white text-white font-bold text-xs flex items-center justify-center shadow-lg group-hover:scale-110 transition">
+              <span x-text="player.number"></span>
+            </div>
+            <div class="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 bg-slate-900/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap border border-slate-700 pointer-events-none" x-text="player.name"></div>
+          </div>
+        </template>
+
+      </div>
+
+    </section>
+
+    <!-- COLONNE DROITE : JOURNAL & FAITS DE MATCH -->
+    <aside class="lg:col-span-3 bg-slate-800 border border-slate-700 rounded-xl flex flex-col overflow-hidden shadow-md">
+      
+      <div class="p-3 bg-slate-900/50 border-b border-slate-700 flex items-center justify-between">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+          <i data-lucide="history" class="w-4 h-4 text-emerald-400"></i> Journal de Match
+        </h3>
+        <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono" x-text="matchLogs.length + ' évènements'"></span>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-3 space-y-2 max-h-[500px] lg:max-h-[none]">
+        <template x-for="(log, i) in matchLogs" :key="i">
+          <div class="p-2 bg-slate-700/40 rounded-lg border border-slate-600/30 text-xs flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                <span x-text="log.time"></span> • <span class="font-bold text-emerald-400" x-text="log.team"></span>
+              </div>
+              <div class="font-semibold text-slate-200 mt-0.5" x-text="log.text"></div>
+            </div>
+            <button @click="removeLog(i)" class="text-slate-500 hover:text-red-400 p-1">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </template>
+
+        <span x-show="matchLogs.length === 0" class="text-xs text-slate-400 italic block text-center py-4">
+          Aucun événement enregistré.
+        </span>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- MODALE : SÉLECTION DU CARTON ET JOUEUR -->
+  <div x-show="showCardModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4" x-cloak>
+    <div @click.away="showCardModal = false" class="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl">
+      
+      <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span :class="{
+            'bg-yellow-500': selectedCardType === 'yellow',
+            'bg-orange-500': selectedCardType === 'orange',
+            'bg-red-500': selectedCardType === 'red'
+          }" class="w-4 h-5 rounded-sm inline-block"></span>
+          Attribution d'un Carton <span x-text="selectedCardType === 'yellow' ? 'JAUNE (10 min)' : (selectedCardType === 'orange' ? 'ORANGE (20 min)' : 'ROUGE (Expulsion)')"></span>
+        </h3>
+        <button @click="showCardModal = false" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Équipe -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Équipe sanctionnée</label>
+          <select x-model="cardForm.team" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none">
+            <option value="home" x-text="match.homeTeam"></option>
+            <option value="away" x-text="match.awayTeam"></option>
+          </select>
+        </div>
+
+        <!-- Joueur -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Joueur</label>
+          <template x-if="cardForm.team === 'home'">
+            <select x-model="cardForm.playerId" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none">
+              <template x-for="p in players" :key="p.id">
+                <option :value="p.id" x-text="'#' + p.number + ' ' + p.name + ' (' + p.role + ')'"></option>
+              </template>
+            </select>
+          </template>
+          <template x-if="cardForm.team === 'away'">
+            <input type="text" x-model="cardForm.customPlayer" placeholder="Nom ou numéro du joueur adversaire..." class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none">
+          </template>
+        </div>
+
+        <!-- Motif -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Motif de la faute</label>
+          <input type="text" x-model="cardForm.reason" placeholder="ex: Plaquage haut, Anti-jeu, Hors-jeu répétitif..." class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none">
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button @click="showCardModal = false" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-300">Annuler</button>
+        <button @click="confirmCard()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg text-white shadow">Valider la sanction</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODALE : FEUILLE DE MATCH IMPRIMABLE / PDF -->
+  <div x-show="showMatchSheet" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto" x-cloak>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-3xl w-full my-8 shadow-2xl text-slate-100">
+      
+      <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="file-spreadsheet" class="w-5 h-5 text-emerald-400"></i> Feuille de Match Officielle
+        </h2>
+        <div class="flex items-center gap-2">
+          <button @click="window.print()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg text-white flex items-center gap-1.5">
+            <i data-lucide="printer" class="w-4 h-4"></i> Imprimer / PDF
+          </button>
+          <button @click="showMatchSheet = false" class="text-slate-400 hover:text-white p-1">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Zone Imprimable -->
+      <div id="printable-sheet" class="bg-white text-slate-900 p-6 rounded-lg space-y-6">
+        <div class="border-b border-slate-300 pb-4 flex justify-between items-center">
+          <div>
+            <h1 class="text-2xl font-black tracking-tight text-slate-900 uppercase">FEUILLE DE MATCH RUGBY</h1>
+            <p class="text-xs text-slate-500" x-text="'Générée le ' + new Date().toLocaleDateString('fr-FR')"></p>
+          </div>
+          <div class="text-right">
+            <div class="text-2xl font-black text-slate-900" x-text="match.homeTeam + ' ' + match.homeScore + ' - ' + match.awayScore + ' ' + match.awayTeam"></div>
+            <div class="text-xs font-semibold text-slate-600" x-text="'Temps de jeu : ' + formatTime(match.timer)"></div>
+          </div>
+        </div>
+
+        <!-- Composition 23 Joueurs -->
+        <div>
+          <h3 class="text-sm font-bold uppercase text-slate-700 border-b border-slate-300 pb-1 mb-2">Composition d'Équipe (23 Joueurs)</h3>
+          <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+            <template x-for="p in players" :key="p.id">
+              <div class="flex justify-between py-0.5 border-b border-slate-100">
+                <span><strong x-text="'#' + p.number"></strong> <span x-text="p.name"></span></span>
+                <span class="text-slate-500 text-[10px]" x-text="p.role"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Faits de match -->
+        <div>
+          <h3 class="text-sm font-bold uppercase text-slate-700 border-b border-slate-300 pb-1 mb-2">Chronologie des Faits de Match & Discipline</h3>
+          <div class="space-y-1 text-xs">
+            <template x-for="log in matchLogs" :key="log.time + log.text">
+              <div class="flex gap-2">
+                <span class="font-mono font-bold text-slate-500" x-text="log.time"></span>
+                <span class="font-bold" x-text="log.team + ' :'"></span>
+                <span x-text="log.text"></span>
+              </div>
+            </template>
+            <span x-show="matchLogs.length === 0" class="text-slate-400 italic">Aucun fait enregistré</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    function rugbyApp() {
+      return {
+        rosterTab: 'starters',
+        showCardModal: false,
+        showMatchSheet: false,
+        selectedCardType: 'yellow',
+        cardForm: { team: 'home', playerId: 1, customPlayer: '', reason: '' },
+        
+        // Scoreboard & Chrono
+        match: {
+          homeTeam: 'XV Domicile',
+          awayTeam: 'Adversaires',
+          homeScore: 0,
+          awayScore: 0,
+          timer: 0,
+          isRunning: false,
+          half: 1,
+          interval: null
+        },
+
+        // 23 Joueurs réglementaires
+        players: [
+          { id: 1, number: 1, name: 'J. Baptiste', role: 'Pilier gauche', onPitch: true, x: 25, y: 20 },
+          { id: 2, number: 2, name: 'M. Marchand', role: 'Talonneur', onPitch: true, x: 25, y: 50 },
+          { id: 3, number: 3, name: 'U. Atonio', role: 'Pilier droit', onPitch: true, x: 25, y: 80 },
+          { id: 4, number: 4, name: 'C. Woki', role: '2e Ligne (G)', onPitch: true, x: 35, y: 35 },
+          { id: 5, number: 5, name: 'T. Flament', role: '2e Ligne (D)', onPitch: true, x: 35, y: 65 },
+          { id: 6, number: 6, name: 'F. Cros', role: '3e Ligne aile', onPitch: true, x: 45, y: 20 },
+          { id: 7, number: 7, name: 'C. Ollivon', role: '3e Ligne aile', onPitch: true, x: 45, y: 80 },
+          { id: 8, number: 8, name: 'G. Alldritt', role: '3e Ligne centre', onPitch: true, x: 45, y: 50 },
+          { id: 9, number: 9, name: 'A. Dupont', role: 'Demi de mêlée', onPitch: true, x: 55, y: 50 },
+          { id: 10, number: 10, name: 'R. Ntamack', role: 'Demi d\'ouverture', onPitch: true, x: 65, y: 50 },
+          { id: 11, number: 11, name: 'L. Bielle-Biarrey', role: 'Ailier gauche', onPitch: true, x: 75, y: 15 },
+          { id: 12, number: 12, name: 'J. Danty', role: 'Centre 12', onPitch: true, x: 75, y: 40 },
+          { id: 13, number: 13, name: 'G. Fickou', role: 'Centre 13', onPitch: true, x: 75, y: 65 },
+          { id: 14, number: 14, name: 'D. Penaud', role: 'Ailier droit', onPitch: true, x: 75, y: 85 },
+          { id: 15, number: 15, name: 'T. Ramos', role: 'Arrière', onPitch: true, x: 88, y: 50 },
+          // 8 Remplaçants (16 à 23)
+          { id: 16, number: 16, name: 'P. Mauvaka', role: 'Rempl. Talonneur', onPitch: false, x: 50, y: 50 },
+          { id: 17, number: 17, name: 'R. Ward', role: 'Rempl. Pilier', onPitch: false, x: 50, y: 50 },
+          { id: 18, number: 18, name: 'D. Aldegheri', role: 'Rempl. Pilier', onPitch: false, x: 50, y: 50 },
+          { id: 19, number: 19, name: 'R. Taofifenua', role: 'Rempl. 2e Ligne', onPitch: false, x: 50, y: 50 },
+          { id: 20, number: 20, name: 'P. Boudehent', role: 'Rempl. 3e Ligne', onPitch: false, x: 50, y: 50 },
+          { id: 21, number: 21, name: 'M. Lucu', role: 'Rempl. Demi mêlée', onPitch: false, x: 50, y: 50 },
+          { id: 22, number: 22, name: 'A. Hastoy', role: 'Rempl. Ouverture', onPitch: false, x: 50, y: 50 },
+          { id: 23, number: 23, name: 'Y. Moefana', role: 'Rempl. Arrière/3/4', onPitch: false, x: 50, y: 50 }
+        ],
+
+        // Exclusions temporaires et sanctions
+        activeCards: [],
+        matchLogs: [],
+
+        // Outils Dessin Canvas
+        drawTool: 'line',
+        drawColor: '#ef4444',
+        isDrawing: false,
+        canvas: null,
+        ctx: null,
+
+        get filteredPlayers() {
+          return this.rosterTab === 'starters' 
+            ? this.players.filter(p => p.number <= 15) 
+            : this.players.filter(p => p.number >= 16);
+        },
+
+        get playersOnPitch() {
+          return this.players.filter(p => p.onPitch);
+        },
+
+        initApp() {
+          this.$nextTick(() => {
+            lucide.createIcons();
+            this.initCanvas();
+          });
+        },
+
+        // CHRONO & TIMERS
+        toggleTimer() {
+          this.match.isRunning = !this.match.isRunning;
+          if (this.match.isRunning) {
+            this.match.interval = setInterval(() => {
+              this.match.timer++;
+              this.updateCardTimers();
+            }, 1000);
+          } else {
+            clearInterval(this.match.interval);
+          }
+        },
+
+        resetTimer() {
+          this.match.timer = 0;
+          this.match.isRunning = false;
+          clearInterval(this.match.interval);
+        },
+
+        toggleHalf() {
+          this.match.half = this.match.half === 1 ? 2 : 1;
+        },
+
+        formatTime(seconds) {
+          const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+          const s = (seconds % 60).toString().padStart(2, '0');
+          return `${m}:${s}`;
+        },
+
+        // CARTONS ET COMPTE À REBOURS
+        openCardModal(type) {
+          this.selectedCardType = type;
+          this.cardForm.playerId = this.players[0].id;
+          this.showCardModal = true;
+        },
+
+        confirmCard() {
+          let pName = "";
+          let pNum = "";
+
+          if (this.cardForm.team === 'home') {
+            const p = this.players.find(x => x.id == this.cardForm.playerId);
+            pName = p.name;
+            pNum = p.number;
+          } else {
+            pName = this.cardForm.customPlayer || "Joueur Adversaire";
+            pNum = "?";
+          }
+
+          const duration = this.selectedCardType === 'yellow' ? 600 : (this.selectedCardType === 'orange' ? 1200 : 0);
+
+          const newCard = {
+            type: this.selectedCardType,
+            team: this.cardForm.team,
+            playerName: pName,
+            playerNum: pNum,
+            remainingTime: duration,
+            reason: this.cardForm.reason
+          };
+
+          this.activeCards.push(newCard);
+
+          // Log
+          const typeLabel = this.selectedCardType === 'yellow' ? 'Carton JAUNE (10m)' : (this.selectedCardType === 'orange' ? 'Carton ORANGE (20m)' : 'Carton ROUGE (Expulsion)');
+          this.addLog(this.cardForm.team === 'home' ? this.match.homeTeam : this.match.awayTeam, `${typeLabel} pour #${pNum} ${pName} (${this.cardForm.reason || 'Faute'})`);
+
+          this.showCardModal = false;
+          this.cardForm.reason = '';
+        },
+
+        updateCardTimers() {
+          this.activeCards.forEach((card, index) => {
+            if (card.remainingTime > 0) {
+              card.remainingTime--;
+              if (card.remainingTime === 0) {
+                this.addLog(card.team === 'home' ? this.match.homeTeam : this.match.awayTeam, `Fin de la sanction pour #${card.playerNum} ${card.playerName}`);
+              }
+            }
+          });
+        },
+
+        removeCard(index) {
+          this.activeCards.splice(index, 1);
+        },
+
+        // SCORES
+        addScore(team, pts, type) {
+          if (team === 'home') this.match.homeScore += pts;
+          else this.match.awayScore += pts;
+
+          const teamName = team === 'home' ? this.match.homeTeam : this.match.awayTeam;
+          this.addLog(teamName, `${type} (+${pts} pts)`);
+        },
+
+        addLog(team, text) {
+          this.matchLogs.unshift({
+            time: this.formatTime(this.match.timer),
+            team: team,
+            text: text
+          });
+        },
+
+        removeLog(index) {
+          this.matchLogs.splice(index, 1);
+        },
+
+        // DRAG & DROP JOUEURS
+        onDragStart(event, player) {
+          event.dataTransfer.setData('text/plain', player.id);
+        },
+
+        onDropOnPitch(event) {
+          const playerId = event.dataTransfer.getData('text/plain');
+          const player = this.players.find(p => p.id == playerId);
+          if (!player) return;
+
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) / rect.width) * 100;
+          const y = ((event.clientY - rect.top) / rect.height) * 100;
+
+          player.x = Math.max(3, Math.min(97, x));
+          player.y = Math.max(3, Math.min(97, y));
+          player.onPitch = true;
+        },
+
+        togglePlayerOnPitch(player) {
+          player.onPitch = !player.onPitch;
+        },
+
+        // CANVAS TACTIQUE DESSIN
+        initCanvas() {
+          this.canvas = document.getElementById('tactical-canvas');
+          if (!this.canvas) return;
+          this.ctx = this.canvas.getContext('2d');
+          this.resizeCanvas();
+          window.addEventListener('resize', () => this.resizeCanvas());
+        },
+
+        resizeCanvas() {
+          const rect = this.canvas.parentElement.getBoundingClientRect();
+          this.canvas.width = rect.width;
+          this.canvas.height = rect.height;
+        },
+
+        setTool(tool) {
+          this.drawTool = tool;
+        },
+
+        startDrawing(e) {
+          this.isDrawing = true;
+          const rect = this.canvas.getBoundingClientRect();
+          this.startX = e.clientX - rect.left;
+          this.startY = e.clientY - rect.top;
+        },
+
+        draw(e) {
+          if (!this.isDrawing) return;
+          const rect = this.canvas.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+
+          if (this.drawTool === 'eraser') {
+            this.ctx.clearRect(x - 10, y - 10, 20, 20);
+            return;
+          }
+
+          this.ctx.strokeStyle = this.drawColor;
+          this.ctx.lineWidth = 3;
+          this.ctx.beginPath();
+
+          if (this.drawTool === 'dashed') {
+            this.ctx.setLineDash([6, 6]);
+          } else {
+            this.ctx.setLineDash([]);
+          }
+
+          this.ctx.moveTo(this.startX, this.startY);
+          this.ctx.lineTo(x, y);
+          this.ctx.stroke();
+
+          if (this.drawTool === 'arrow') {
+            this.drawArrowhead(x, y, Math.atan2(y - this.startY, x - this.startX));
+          }
+
+          this.startX = x;
+          this.startY = y;
+        },
+
+        stopDrawing() {
+          this.isDrawing = false;
+        },
+
+        drawArrowhead(x, y, angle) {
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.translate(x, y);
+          this.ctx.rotate(angle);
+          this.ctx.moveTo(0, 0);
+          this.ctx.lineTo(-10, -5);
+          this.ctx.lineTo(-10, 5);
+          this.ctx.closePath();
+          this.ctx.fillStyle = this.drawColor;
+          this.ctx.fill();
+          this.ctx.restore();
+        },
+
+        clearCanvas() {
+          this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        },
+
+        // EXPORT IMAGE TERRAIN
+        exportPitchImage() {
+          const pitch = document.getElementById('pitch-container');
+          html2canvas(pitch).then(canvas => {
+            const link = document.createElement('a');
+            link.download = `RugbyTactique-${new Date().toISOString().slice(0,10)}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+          });
+        },
+
+        // PRESETS TACTIQUES
+        applyPreset(type) {
+          const resetPositions = (coords) => {
+            coords.forEach(c => {
+              const p = this.players.find(x => x.number === c.n);
+              if (p) {
+                p.x = c.x;
+                p.y = c.y;
+                p.onPitch = true;
+              }
+            });
+          };
+
+          if (type === 'scrum') {
+            resetPositions([
+              {n:1, x:30, y:45}, {n:2, x:30, y:50}, {n:3, x:30, y:55},
+              {n:4, x:25, y:47}, {n:5, x:25, y:53},
+              {n:6, x:23, y:40}, {n:7, x:23, y:60}, {n:8, x:20, y:50},
+              {n:9, x:32, y:65}, {n:10, x:45, y:50}, {n:12, x:55, y:45}, {n:13, x:65, y:40}
+            ]);
+          } else if (type === 'lineout') {
+            resetPositions([
+              {n:2, x:10, y:20}, {n:1, x:15, y:20}, {n:4, x:22, y:20}, {n:5, x:30, y:20},
+              {n:3, x:37, y:20}, {n:9, x:25, y:35}, {n:10, x:35, y:50}
+            ]);
+          } else if (type === 'attackWave') {
+            resetPositions([
+              {n:9, x:40, y:50}, {n:10, x:50, y:50}, {n:12, x:60, y:40}, {n:13, x:70, y:30},
+              {n:11, x:80, y:15}, {n:14, x:80, y:85}, {n:15, x:85, y:50}
+            ]);
+          } else if (type === 'blitzDef') {
+            resetPositions([
+              {n:1, x:50, y:20}, {n:2, x:50, y:30}, {n:3, x:50, y:40}, {n:4, x:50, y:50},
+              {n:5, x:50, y:60}, {n:6, x:50, y:70}, {n:7, x:50, y:80}
+            ]);
+          }
+        }
+
+      }
+    }
+  </script>
+</body>
+</html>
